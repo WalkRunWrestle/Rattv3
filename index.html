@@ -1580,25 +1580,31 @@
       renderSessions();
       updateOverallProgress();
       setStatus("Run saved", "status-saved");
-    }
 
-    function sendProofEmail(){
-      const totalKm = getTotalKm();
-      const body = [
-        "Hi WRW,",
-        "",
-        "I have completed The Rattlesnake 10K.",
-        "",
-        "My details:",
-        "Full Name:",
-        "Address (first line):",
-        "",
-        "Attached are my proof screenshots.",
-        "",
-        `Total logged distance: ${totalKm.toFixed(2)} km`,
-        "",
-        "Thanks"
-      ].join("\\n");
+      function sendProofEmail(){
+  const totalKm = getTotalKm();
+
+  const body = [
+    "Hi WRW,",
+    "",
+    "I have completed The Rattlesnake 10K.",
+    "",
+    "My details:",
+    "Full Name:",
+    "Address (first line):",
+    "",
+    "Attached are my proof screenshots.",
+    "",
+    `Total logged distance: ${totalKm.toFixed(2)} km`,
+    "",
+    "Thanks"
+  ].join("\n"); // ✅ FIXED HERE
+
+  const subject = encodeURIComponent("WRW Rattlesnake 10K Proof");
+  const emailBody = encodeURIComponent(body);
+
+  window.location.href = `mailto:${WRW_EMAIL}?subject=${subject}&body=${emailBody}`;
+      }
 
       const subject = encodeURIComponent("WRW Rattlesnake 10K Proof");
       const emailBody = encodeURIComponent(body);
