@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
   <style>
     :root{
@@ -826,6 +827,15 @@
       100%{filter:brightness(1)}
     }
 
+  
+    .zip-help{
+      margin-top:8px;
+      font-size:.8rem;
+      color:#7c848d;
+      text-align:center;
+      line-height:1.4;
+    }
+
   </style>
 </head>
 <body>
@@ -1038,8 +1048,16 @@
               </div>
 
               <div class="manual-row">
+                <input id="runProofInput" class="input" type="file" accept="image/*" style="margin-top:0;">
+              </div>
+
+              <div class="manual-row">
                 <button id="manualAddBtn" class="btn btn-primary">Save Run</button>
                 <button id="stravaHelpBtn" class="btn btn-secondary">How it works</button>
+              </div>
+
+              <div id="proofAttachNotice" class="notice" style="margin-top:8px;">
+                Upload a screenshot for this run if you want it included in your final proof ZIP.
               </div>
 
               <div class="notice" style="margin-top:8px;">
@@ -1106,12 +1124,20 @@
       </div>
 
       <div class="footer-actions">
+        <button id="downloadAllProofsBtn" class="btn btn-primary">Download All Proofs ZIP</button>
+      </div>
+
+      <p class="zip-help">
+        ZIP downloads to your phone. Open it in Files to attach screenshots.
+      </p>
+
+      <div class="footer-actions">
         <button id="proofBtn" class="btn btn-gold">Send Proof</button>
         <button id="closeFinishBtn" class="btn btn-secondary">Close</button>
       </div>
 
       <div class="help">
-        Attach your own tracking screenshot(s) to the email before sending.
+        Download your proof ZIP first, then attach the files to your email before sending.
       </div>
     </div>
   </div>
@@ -1210,6 +1236,8 @@
 
     const manualDistanceInput = document.getElementById("manualDistance");
     const manualDateInput = document.getElementById("manualDate");
+    const runProofInput = document.getElementById("runProofInput");
+    const proofAttachNotice = document.getElementById("proofAttachNotice");
     const manualAddBtn = document.getElementById("manualAddBtn");
 
     const savedTotalKmEl = document.getElementById("savedTotalKm");
@@ -1224,6 +1252,7 @@
     const finishOverlay = document.getElementById("finishOverlay");
     const finishTotalEl = document.getElementById("finishTotal");
     const finishMessage = document.getElementById("finishMessage");
+    const downloadAllProofsBtn = document.getElementById("downloadAllProofsBtn");
     const proofBtn = document.getElementById("proofBtn");
     const closeFinishBtn = document.getElementById("closeFinishBtn");
     const completionActions = document.getElementById("completionActions");
@@ -1480,8 +1509,8 @@
 
     function updateFinishMessage(){
       finishMessage.innerHTML = `
-        Attach your fitness app screenshot(s) to your email.<br><br>
-        Make sure your distance is clearly visible.
+        Download your proof ZIP first, then attach the screenshots to your email.<br><br>
+        Make sure your distance is clearly visible in every image.
       `;
     }
 
@@ -1534,7 +1563,10 @@
             <span>${session.distanceKm.toFixed(2)} km</span>
           </div>
 
-          <div class="session-badge badge-log">Logged run</div>
+          <div>
+            <div class="session-badge badge-log">Logged run</div>
+            ${session.proofDataUrl ? '<div class="session-badge badge-log" style="margin-left:6px;">📎 Proof attached</div>' : ''}
+          </div>
 
           <div class="session-meta">
             Date: ${new Date(session.date).toLocaleDateString()}
@@ -1553,7 +1585,88 @@
       finishOverlay.classList.remove("show");
     }
 
-    function addRun(){
+
+    function sanitizeFileName(name){
+      return String(name || "proof")
+        .replace(/[^a-z0-9._-]+/gi, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    }
+
+    function fileToDataUrl(file){
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function dataUrlToBase64(dataUrl){
+      return dataUrl.split(",")[1];
+    }
+
+    async function compressImage(file, maxWidth = 1600, quality = 0.82){
+      const fileDataUrl = await fileToDataUrl(file);
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxWidth / img.width);
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.src = fileDataUrl;
+      });
+    }
+
+    async function downloadAllProofsZip(){
+      const sessions = getSessions();
+      const proofSessions = sessions.filter(session => !!session.proofDataUrl);
+
+      if (!proofSessions.length){
+        alert("No screenshots have been uploaded yet.");
+        return;
+      }
+
+      const zip = new JSZip();
+
+      proofSessions.forEach((session, index) => {
+        const date = new Date(session.date).toISOString().split("T")[0];
+        const distance = Number(session.distanceKm || 0).toFixed(2).replace(".", "_");
+        const originalName = sanitizeFileName(session.proofName || `run_${index + 1}.jpg`);
+        const extension = originalName.includes(".") ? originalName.split(".").pop() : "jpg";
+        const baseName = originalName.replace(/\.[^.]+$/, "");
+        const fileName = `${String(index + 1).padStart(2, "0")}_${date}_${distance}km_${baseName}.${extension}`;
+        zip.file(fileName, dataUrlToBase64(session.proofDataUrl), { base64: true });
+      });
+
+      const summaryLines = [
+        "WRW Rattlesnake 10K Proof Summary",
+        "",
+        `Total logged distance: ${getTotalKm().toFixed(2)} km`,
+        `Runs saved: ${sessions.length}`,
+        `Screenshots included: ${proofSessions.length}`,
+        "",
+        "Attach these proof files to your WRW proof email."
+      ];
+      zip.file("WRW_Proof_Summary.txt", summaryLines.join("\n"));
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "WRW_Rattlesnake_Proofs.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    }
+
+    async function addRun(){
       const distanceKm = Number(manualDistanceInput.value);
       const selectedDate = manualDateInput.value;
 
@@ -1567,15 +1680,36 @@
         return;
       }
 
+      let proofDataUrl = "";
+      let proofName = "";
+
+      const proofFile = runProofInput && runProofInput.files && runProofInput.files[0];
+
+      if (proofFile){
+        try{
+          proofDataUrl = await compressImage(proofFile);
+          proofName = proofFile.name || "proof.jpg";
+        }catch(error){
+          alert("There was a problem reading that screenshot. Please try again.");
+          return;
+        }
+      }
+
       const sessions = getSessions();
       sessions.push({
         date: new Date(selectedDate + "T12:00:00").toISOString(),
-        distanceKm
+        distanceKm,
+        proofDataUrl,
+        proofName
       });
       saveSessions(sessions);
 
       manualDistanceInput.value = "";
       manualDateInput.value = new Date().toISOString().split("T")[0];
+      if (runProofInput) runProofInput.value = "";
+      if (proofAttachNotice){
+        proofAttachNotice.textContent = "Upload a screenshot for this run if you want it included in your final proof ZIP.";
+      }
 
       renderSessions();
       updateOverallProgress();
@@ -1619,7 +1753,18 @@
     });
 
     manualAddBtn.addEventListener("click", addRun);
+    downloadAllProofsBtn.addEventListener("click", downloadAllProofsZip);
     stravaHelpBtn.addEventListener("click", () => howItWorksOverlay.classList.add("show"));
+
+    if (runProofInput){
+      runProofInput.addEventListener("change", () => {
+        if (!proofAttachNotice) return;
+        const file = runProofInput.files && runProofInput.files[0];
+        proofAttachNotice.textContent = file
+          ? `Screenshot ready: ${file.name}`
+          : "Upload a screenshot for this run if you want it included in your final proof ZIP.";
+      });
+    }
 
     logToggle.addEventListener("click", () => toggleSection(logContent, logToggleText));
     savedRunsToggle.addEventListener("click", () => toggleSection(savedRunsContent, savedRunsToggleText));
